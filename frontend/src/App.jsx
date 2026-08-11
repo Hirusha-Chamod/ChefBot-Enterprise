@@ -4,6 +4,8 @@ import ChatInput from "./components/ChatInput";
 import DietarySelector from "./components/DietarySelector";
 import AuthModal from "./components/AuthModal";
 
+import VisionUploader from "./components/VisionUploader";
+
 export default function App() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -76,6 +78,7 @@ export default function App() {
         </div>
 
         <div className="header-actions">
+          <VisionUploader onIngredientsDetected={(ingredients) => handleSend(`Fridge photo detected items: ${ingredients}`)} />
           {user ? (
             <span style={{ fontSize: "0.85rem", color: "#34d399", fontWeight: "600" }}>
               👤 {user.username}

@@ -17,7 +17,10 @@ class Settings(BaseModel):
     USDA_API_KEY: str = os.environ.get("USDA_API_KEY", "DEMO_KEY")
     OPENROUTER_MODEL: str = os.environ.get("OPENROUTER_MODEL", "openrouter/auto")
     
-    # DB Settings
+    # DB & Monitoring Settings
     DB_PATH: str = os.path.join(os.path.dirname(__file__), "..", "..", "chefbot_enterprise.db")
+    DATABASE_URL: str = os.environ.get("DATABASE_URL", "")
+    LANGSMITH_API_KEY: str = os.environ.get("LANGSMITH_API_KEY", "")
+    LANGSMITH_PROJECT: str = os.environ.get("LANGSMITH_PROJECT", "ChefBot-Enterprise")
 
 settings = Settings()

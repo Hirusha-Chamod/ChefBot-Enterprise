@@ -19,6 +19,7 @@ load_dotenv()
 from app.core.config import settings
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
+from app.api.vision import router as vision_router
 
 # Initialize SlowAPI Rate Limiter
 limiter = Limiter(key_func=get_remote_address, default_limits=["20/minute"])
@@ -44,6 +45,7 @@ app.add_middleware(
 # Include API Routers
 app.include_router(auth_router, prefix=settings.API_PREFIX)
 app.include_router(chat_router, prefix=settings.API_PREFIX)
+app.include_router(vision_router, prefix=settings.API_PREFIX)
 
 @app.get("/")
 def root():
