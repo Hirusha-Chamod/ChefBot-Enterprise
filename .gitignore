@@ -1,0 +1,35 @@
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+*.env
+*.pem
+*.key
+
+# Python Backend & Virtual Environment
+backend/venv/
+backend/__pycache__/
+app/__pycache__/
+app/**/__pycache__/
+*.py[cod]
+*$py.class
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Node.js Frontend & Build Output
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System & Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
