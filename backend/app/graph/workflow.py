@@ -43,10 +43,10 @@ def create_chefbot_graph():
             pool = ConnectionPool(conninfo=db_url, max_size=10, kwargs={"autocommit": True})
             checkpointer = PostgresSaver(pool)
             checkpointer.setup()  # Creates checkpointer schema in Neon DB if not exists
-            print("🟢 Connected to Neon DB PostgreSQL Checkpointer!")
+            print("[INFO] Connected to Neon DB PostgreSQL Checkpointer!")
             return workflow.compile(checkpointer=checkpointer)
         except Exception as e:
-            print(f"⚠️ Neon DB Connection Warning: {e}. Falling back to MemorySaver...")
+            print(f"[WARN] Neon DB Connection Warning: {e}. Falling back to MemorySaver...")
 
     checkpointer = MemorySaver()
     app = workflow.compile(checkpointer=checkpointer)

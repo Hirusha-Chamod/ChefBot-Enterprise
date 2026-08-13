@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { SendHorizonal, Globe } from "lucide-react";
+import VisionUploader from "./VisionUploader";
 
 export default function ChatInput({ onSend, allowWebSearch, onToggleWebSearch, disabled }) {
   const [prompt, setPrompt] = useState("");
@@ -10,28 +12,40 @@ export default function ChatInput({ onSend, allowWebSearch, onToggleWebSearch, d
     setPrompt("");
   };
 
+  const handleKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
   return (
-    <form className="input-form" onSubmit={handleSubmit}>
+    <form className="input-bar" onSubmit={handleSubmit}>
+      <VisionUploader onIngredientsDetected={(ingredients) => onSend(`Fridge photo detected: ${ingredients}`)} />
+
       <button
         type="button"
-        className={`btn-toggle-web ${allowWebSearch ? "active" : ""}`}
+        className={`btn-web-toggle ${allowWebSearch ? "active" : ""}`}
         onClick={onToggleWebSearch}
-        title={allowWebSearch ? "Web Search Enabled (Tavily)" : "Web Search Disabled (Offline API)"}
+        title={allowWebSearch ? "Web Search ON" : "Web Search OFF"}
       >
-        🌐 Web Search: {allowWebSearch ? "ON" : "OFF"}
+        <Globe size={13} />
+        <span>Web {allowWebSearch ? "ON" : "OFF"}</span>
       </button>
 
       <input
         type="text"
-        className="chat-input"
-        placeholder="Type fridge ingredients (e.g., 3 eggs, onion, soy sauce, no butter)..."
+        className="input-field"
+        placeholder="Enter ingredients or recipe request..."
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
+        onKeyDown={handleKey}
         disabled={disabled}
       />
 
       <button type="submit" className="btn-send" disabled={disabled || !prompt.trim()}>
-        Send
+        <SendHorizonal size={14} />
+        <span>Send</span>
       </button>
     </form>
   );

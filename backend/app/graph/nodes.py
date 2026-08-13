@@ -1,64 +1,92 @@
 import os
-from typing import Dict, Any
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
 from langgraph.prebuilt import ToolNode
 
 from app.core.config import settings
 from app.graph.state import ChefBotState
-from app.graph.tools import ALL_TOOLS, web_search, search_recipes_api, get_recipe_details, substitute_ingredient, calculate_nutrition
+from app.graph.tools import ALL_TOOLS
 
-# Initialize LangChain ChatOpenAI configured for OpenRouter
-def get_llm():
-    return ChatOpenAI(
+def chefbot_agent_node(state: ChefBotState) -> dict:
+    messages = state.get("messages", [])
+    dietary = state.get("dietary_profile", "Standard")
+    servings = state.get("servings", 2)
+    allow_web_search = state.get("allow_web_search", True)
+
+    # Extract last user prompt for logging
+    last_user_prompt = ""
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage) or getattr(msg, "type", "") == "human":
+            last_user_prompt = str(msg.content)
+            break
+
+    print(f"\n[AGENT NODE] Incoming Prompt: \"{last_user_prompt}\"")
+    print(f"[AGENT CONFIG] Dietary: {dietary} | Servings: {servings} | Allow Web Search: {allow_web_search}")
+
+    summary_block = ""
+    if len(messages) > 10:
+        old_msgs = [msg.content for msg in messages[:-8] if hasattr(msg, "content")]
+        summary_text = "; ".join(old_msgs[-3:])
+        summary_block = f"\n\n[LANGMEM CONVERSATION SUMMARY]:\n- recent user preferences: {summary_text}"
+        messages = messages[-8:]
+
+    sys_prompt = (
+        "YOU ARE CHEFBOT - AN ENTERPRISE CULINARY AI ASSISTANT.\n\n"
+        "RULE 1: You MUST only answer culinary, recipe, ingredient, or kitchen-related questions.\n"
+        "IF any off-topic question is asked, IMMEDIATELY REJECT WITH:\n"
+        "\"I am ChefBot, your culinary assistant. I can only help you with cooking, recipes, and food.\"\n\n"
+        f"USER DIETARY PROFILE: {dietary}.\n"
+        "ADJUST ALL RECIPES TO STRICTLY HONOR THIS DIETARY PROFILE!\n\n"
+        f"USER REQUESTED SERVINGS: {servings} PEOPLE.\n"
+        f"SCALE ALL INGREDIENT QUANTITIES, PAN SIZES, AND USDA NUTRITION TOTALS PROPORTIONALLY FOR {servings} SERVINGS!\n\n"
+        f"WEB SEARCH ALLOWED: {allow_web_search}.\n"
+        + ("Do NOT attempt web search; rely on your internal culinary knowledge and database tools.\n\n" if not allow_web_search else "\n") +
+        "EFFICIENCY RULE: Be fast and decisive! Execute all necessary tools in parallel in as few turns as possible. Do NOT make duplicate search calls.\n\n"
+        "FORMAT RULE: When a user asks for a recipe, provide 3 DISTINCT CANDIDATE OPTIONS and detailed step-by-step instructions for each option in this exact format:\n"
+        "### Options Found:\n"
+        "1. **Option A: [Recipe Name]** (~[Time] mins | [Kcal] kcal) - [1-line description]\n"
+        "2. **Option B: [Recipe Name]** (~[Time] mins | [Kcal] kcal) - [1-line description]\n"
+        "3. **Option C: [Recipe Name]** (~[Time] mins | [Kcal] kcal) - [1-line description]\n\n"
+        "### Option A Steps\n"
+        "Step 1: [Detailed preparation instruction with pan size and timer e.g. 'heat skillet for 2 minutes']\n"
+        "Step 2: [Step instruction with timer e.g. 'cook eggs for 4 minutes']\n\n"
+        "### Option B Steps\n"
+        "Step 1: [Detailed preparation instruction with pan size and timer]\n"
+        "Step 2: [Step instruction with timer]\n\n"
+        "### Option C Steps\n"
+        "Step 1: [Detailed preparation instruction with pan size and timer]\n"
+        "Step 2: [Step instruction with timer]\n"
+        f"{summary_block}"
+    )
+
+    llm = ChatOpenAI(
         model=settings.OPENROUTER_MODEL,
         openai_api_key=settings.OPENROUTER_API_KEY,
         openai_api_base="https://openrouter.ai/api/v1",
-        max_tokens=1500,
-        temperature=0.7,
+        temperature=0.2,
+        max_tokens=1600,
     )
 
-def chefbot_agent_node(state: ChefBotState) -> Dict[str, Any]:
-    """
-    Core Agent Node in LangGraph.
-    Inspects user prompt, dietary profile, and executes LLM completion.
-    """
-    dietary_profile = state.get("dietary_profile", "Standard")
-    allow_web = state.get("allow_web_search", True)
+    # Filter tools based on allow_web_search setting
+    active_tools = [t for t in ALL_TOOLS if (allow_web_search or t.name != "web_search")]
+    tool_names = [t.name for t in active_tools]
+    print(f"[AGENT TOOL BINDING] Active Tools Bound to LLM: {tool_names}")
 
-    # Filter active tools based on allow_web_search
-    if allow_web:
-        active_tools = ALL_TOOLS
+    if active_tools:
+        llm = llm.bind_tools(active_tools)
+
+    sys_msg = SystemMessage(content=sys_prompt)
+    full_messages = [sys_msg] + messages
+    response = llm.invoke(full_messages)
+
+    if getattr(response, "tool_calls", None):
+        print(f"[AGENT DECISION] LLM requested {len(response.tool_calls)} tool call(s):")
+        for tc in response.tool_calls:
+            print(f"  -> Tool: {tc.get('name')} | Args: {tc.get('args')}")
     else:
-        active_tools = [t for t in ALL_TOOLS if t.name != "web_search"]
+        resp_snippet = str(response.content)[:120].replace('\n', ' ')
+        print(f"[AGENT DECISION] LLM returned final text answer (no tools). Snippet: \"{resp_snippet}...\"")
 
-    system_prompt = (
-        "You are ChefBot-Enterprise, a production-grade culinary AI agent.\n\n"
-        "STRICT DOMAIN GUARDRAILS:\n"
-        "1. You must ONLY answer questions directly related to food, cooking, recipes, ingredients, and nutrition.\n"
-        "2. If the user asks off-topic questions (e.g. general trivia, geography, politics, sports, coding), "
-        "DO NOT call any search tools or web search. Immediately respond politely stating that you are ChefBot.\n\n"
-        f"USER DIETARY PROFILE: {dietary_profile.upper()}\n"
-        "Strictly ensure all suggested ingredients and substitutes comply with this dietary restriction!\n\n"
-        "OPERATIONAL INSTRUCTIONS:\n"
-        "- Reason step-by-step using a ReAct loop.\n"
-        "- Respect kitchen equipment constraints.\n"
-        "- Use tools to search recipes and find ingredient substitutes.\n"
-        "- MANDATORY: You MUST call `calculate_nutrition` for the final ingredient list before presenting your final recipe.\n"
-        "- Present a clear, structured, appetizing recipe with macro totals at the end."
-    )
-
-    llm = get_llm().bind_tools(active_tools)
-    
-    # Inject system prompt at head of messages if not already present
-    messages = list(state["messages"])
-    if not messages or not isinstance(messages[0], SystemMessage):
-        messages.insert(0, SystemMessage(content=system_prompt))
-    else:
-        messages[0] = SystemMessage(content=system_prompt)
-
-    response = llm.invoke(messages)
     return {"messages": [response]}
 
-# Prebuilt LangGraph ToolNode for executing tool calls
 tools_execution_node = ToolNode(ALL_TOOLS)
