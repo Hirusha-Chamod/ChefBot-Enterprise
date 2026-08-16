@@ -1,5 +1,5 @@
-import React from "react";
 import { MessageSquare, Plus, Trash2, PanelLeftClose, PanelLeft, Loader2 } from "lucide-react";
+import { SidebarSkeletonLoader } from "./SkeletonLoader";
 
 export default function SessionsSidebar({
   isOpen,
@@ -11,13 +11,7 @@ export default function SessionsSidebar({
   onDeleteSession,
   loading = false,
 }) {
-  if (!isOpen) {
-    return (
-      <button className="sidebar-toggle-btn collapsed" onClick={onToggle} title="Open Sessions Sidebar">
-        <PanelLeft size={16} />
-      </button>
-    );
-  }
+  if (!isOpen) return null;
 
   return (
     <aside className="sessions-sidebar">
@@ -44,10 +38,7 @@ export default function SessionsSidebar({
 
       <div className="sessions-list">
         {loading && sessions.length === 0 ? (
-          <div className="sessions-empty" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem" }}>
-            <Loader2 size={14} className="spin" color="var(--accent-primary)" />
-            <span>Loading...</span>
-          </div>
+          <SidebarSkeletonLoader count={5} />
         ) : sessions.length === 0 ? (
           <div className="sessions-empty">No previous sessions</div>
         ) : (

@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import MessageBubble from "./components/MessageBubble";
 import ChatInput from "./components/ChatInput";
 import DietarySelector from "./components/DietarySelector";
 import ServingsSlider from "./components/ServingsSlider";
 import AuthModal from "./components/AuthModal";
 import CookingModeModal from "./components/CookingModeModal";
+import MemoriesModal from "./components/MemoriesModal";
 import SessionsSidebar from "./components/SessionsSidebar";
-import { ChefHat, Flame } from "lucide-react";
+import { ChatSkeletonLoader } from "./components/SkeletonLoader";
+import { ChefHat, Flame, PanelLeft, Brain } from "lucide-react";
 import "./styles/index.css";
 
 function generateThreadId() {
@@ -20,6 +22,13 @@ export default function App() {
   const [dietaryProfile, setDietaryProfile] = useState("Standard");
   const [servings, setServings] = useState(2);
   
+  // Modals
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isCookingOpen, setIsCookingOpen] = useState(false);
+  const [isMemoriesOpen, setIsMemoriesOpen] = useState(false);
+  const [activeRecipeText, setActiveRecipeText] = useState("");
+  const [activeRecipeTitle, setActiveRecipeTitle] = useState("");
+  
   // Persistent Thread ID State
   const [threadId, setThreadId] = useState(() => {
     return localStorage.getItem("chefbot_thread_id") || generateThreadId();
@@ -28,7 +37,18 @@ export default function App() {
   // Sessions Sidebar State
   const [sessions, setSessions] = useState([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, loading]);
 
   // Auth State — hydrated from localStorage so it survives page refresh
   const [user, setUser] = useState(() => {
@@ -36,12 +56,6 @@ export default function App() {
     catch { return null; }
   });
   const [token, setToken] = useState(() => localStorage.getItem("chefbot_token") || "");
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
-
-  // Cooking Mode Modal State
-  const [isCookingOpen, setIsCookingOpen] = useState(false);
-  const [activeRecipeText, setActiveRecipeText] = useState("");
-  const [activeRecipeTitle, setActiveRecipeTitle] = useState("");
 
   useEffect(() => {
     localStorage.setItem("chefbot_thread_id", threadId);
@@ -70,6 +84,7 @@ export default function App() {
   };
 
   const fetchHistory = async (targetThreadId) => {
+    setLoadingHistory(true);
     try {
       const res = await fetch(`http://localhost:8000/api/chat/history/${targetThreadId}`);
       if (res.ok) {
@@ -82,6 +97,8 @@ export default function App() {
       }
     } catch (err) {
       console.log("Error loading session history:", err);
+    } finally {
+      setLoadingHistory(false);
     }
   };
 
@@ -168,49 +185,48 @@ export default function App() {
         done = streamDone;
         if (value) {
           buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n\n");
-          buffer = lines.pop() || "";
+          const events = buffer.split(/\r?\n\r?\n/);
+          buffer = events.pop() || "";
 
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const jsonStr = line.replace("data: ", "").trim();
-                if (!jsonStr) continue;
-                const parsed = JSON.parse(jsonStr);
+          for (const event of events) {
+            const lines = event.split(/\r?\n/);
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                try {
+                  const jsonStr = line.slice(6).trim();
+                  if (!jsonStr) continue;
+                  const parsed = JSON.parse(jsonStr);
 
-                if (parsed.error) {
-                  throw new Error(parsed.error);
+                  if (parsed.error) {
+                    throw new Error(parsed.error);
+                  }
+
+                  if (parsed.token) {
+                    setMessages((prev) => {
+                      const newArr = [...prev];
+                      const lastIdx = newArr.length - 1;
+                      if (lastIdx >= 0 && newArr[lastIdx].role === "assistant") {
+                        newArr[lastIdx] = {
+                          ...newArr[lastIdx],
+                          content: newArr[lastIdx].content + parsed.token,
+                        };
+                      }
+                      return newArr;
+                    });
+                  }
+                } catch (e) {
+                  console.log("Stream line parse warning:", e);
                 }
-
-                if (parsed.token) {
-                  setMessages((prev) => {
-                    const newArr = [...prev];
-                    const lastIdx = newArr.length - 1;
-                    if (lastIdx >= 0 && newArr[lastIdx].role === "assistant") {
-                      newArr[lastIdx] = {
-                        ...newArr[lastIdx],
-                        content: newArr[lastIdx].content + parsed.token,
-                      };
-                    }
-                    return newArr;
-                  });
-                }
-              } catch (e) {
-                console.log("Stream line parse warning:", e);
               }
             }
           }
         }
       }
 
-      setTimeout(() => {
-        fetchHistory(activeThread);
-        fetchSessions();
-      }, 300);
-    } catch (error) {
-      console.log("Stream error, falling back to history fetch:", error);
-      await fetchHistory(activeThread);
+      // Refresh sidebar list in background without reloading chat messages
       fetchSessions();
+    } catch (error) {
+      console.log("Stream error:", error);
     } finally {
       setLoading(false);
     }
@@ -241,6 +257,15 @@ export default function App() {
         {/* Top Navigation */}
         <header className="top-nav">
           <div className="nav-brand">
+            {!isSidebarOpen && (
+              <button
+                className="sidebar-toggle-btn in-nav"
+                onClick={() => setIsSidebarOpen(true)}
+                title="Open Saved Chats"
+              >
+                <PanelLeft size={16} />
+              </button>
+            )}
             <div className="nav-brand-icon">
               <ChefHat size={18} />
             </div>
@@ -248,6 +273,15 @@ export default function App() {
           </div>
 
           <div className="nav-actions">
+            <button
+              className="btn-memory-nav"
+              onClick={() => setIsMemoriesOpen(true)}
+              title="View & manage learned memories"
+            >
+              <Brain size={14} />
+              <span>Memories</span>
+            </button>
+
             {user ? (
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 <span className="btn-nav-action user-btn">{user.username}</span>
@@ -275,7 +309,9 @@ export default function App() {
 
         {/* Chat Area */}
         <main className="chat-area">
-          {messages.length === 0 ? (
+          {loadingHistory ? (
+            <ChatSkeletonLoader />
+          ) : messages.length === 0 ? (
             <div className="empty-state">
               <div className="empty-icon-wrap">
                 <ChefHat size={34} />
@@ -304,6 +340,7 @@ export default function App() {
                   role={msg.role}
                   content={msg.content}
                   onStartCooking={msg.role === "assistant" ? handleStartCooking : undefined}
+                  isStreaming={loading && i === messages.length - 1 && msg.role === "assistant"}
                 />
               ))}
               {loading && !messages[messages.length - 1]?.content && (
@@ -313,10 +350,11 @@ export default function App() {
                   </div>
                   <div className="thinking-bubble">
                     <Flame size={14} className="spin" color="var(--accent-primary)" />
-                    <span>Cooking...</span>
+                    <span>Preparing ingredients & recipes...</span>
                   </div>
                 </div>
               )}
+              <div ref={messagesEndRef} />
             </div>
           )}
         </main>
@@ -340,6 +378,10 @@ export default function App() {
           onClose={() => setIsCookingOpen(false)}
           recipeText={activeRecipeText}
           recipeTitle={activeRecipeTitle}
+        />
+        <MemoriesModal
+          isOpen={isMemoriesOpen}
+          onClose={() => setIsMemoriesOpen(false)}
         />
       </div>
     </div>

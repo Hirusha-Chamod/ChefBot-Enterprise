@@ -216,13 +216,20 @@ async def chat_stream_endpoint(request: ChatRequest, authorization: Optional[str
             yield {"data": json.dumps({"token": "", "done": True})}
         return EventSourceResponse(cached_gen())
 
-    config = {'configurable': {'thread_id': request.thread_id}}
+    uid_str = str(user_id) if user_id else "default_user"
+    config = {
+        'configurable': {
+            'thread_id': request.thread_id,
+            'user_id': uid_str
+        }
+    }
     inputs = {
         'messages': [HumanMessage(content=sanitized_prompt)],
         'dietary_profile': request.dietary_profile or 'Standard',
         'allow_web_search': request.allow_web_search,
         'thread_id': request.thread_id,
         'servings': request.servings,
+        'user_id': uid_str,
     }
 
     q = queue.Queue()
@@ -257,6 +264,7 @@ async def chat_stream_endpoint(request: ChatRequest, authorization: Optional[str
 
             if item.get("done"):
                 final_recipe_text = ""
+                msgs = []
                 try:
                     state = chefbot_app.get_state(config)
                     msgs = state.values.get("messages", []) if state and state.values else []
@@ -271,6 +279,11 @@ async def chat_stream_endpoint(request: ChatRequest, authorization: Optional[str
                 if text_to_cache:
                     set_cached_recipe(f'{sanitized_prompt}:servings_{request.servings}', text_to_cache, request.dietary_profile or 'Standard', request.allow_web_search)
                 
+                # Trigger LangMem background fact extraction
+                if msgs:
+                    from app.core.memory import extract_and_store_memories_async
+                    extract_and_store_memories_async(msgs, uid_str)
+
                 yield {"data": json.dumps({"token": "", "done": True})}
                 break
 
@@ -280,6 +293,47 @@ async def chat_stream_endpoint(request: ChatRequest, authorization: Optional[str
                 yield {"data": json.dumps({"token": token, "done": False})}
 
     return EventSourceResponse(event_generator())
+
+@router.get('/memories')
+def get_user_memories_endpoint(authorization: Optional[str] = Header(None)):
+    """Returns active LangMem memories stored for the current user."""
+    user_id = get_optional_user_id(authorization)
+    uid_str = str(user_id) if user_id else "default_user"
+    from app.core.memory import get_memory_store
+    try:
+        store = get_memory_store()
+        namespace = ("memories", uid_str)
+        items = store.search(namespace, limit=50)
+        result = []
+        for item in items:
+            val = item.value
+            if isinstance(val, dict):
+                text_val = val.get("content") or val.get("text") or val.get("memory") or str(val)
+            else:
+                text_val = str(val)
+            result.append({
+                "key": str(item.key),
+                "text": str(text_val),
+                "created_at": str(item.created_at)
+            })
+        return result
+    except Exception as e:
+        print(f"[LANGMEM API ERROR] {e}")
+        return []
+
+@router.delete('/memories/{memory_key}')
+def delete_user_memory_endpoint(memory_key: str, authorization: Optional[str] = Header(None)):
+    """Deletes a specific LangMem memory by key."""
+    user_id = get_optional_user_id(authorization)
+    uid_str = str(user_id) if user_id else "default_user"
+    from app.core.memory import get_memory_store
+    try:
+        store = get_memory_store()
+        namespace = ("memories", uid_str)
+        store.delete(namespace, memory_key)
+        return {"status": "success", "deleted_key": memory_key}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete memory: {e}")
 
 @router.get('/sessions', response_model=List[SessionResponse])
 def get_sessions(authorization: Optional[str] = Header(None)):

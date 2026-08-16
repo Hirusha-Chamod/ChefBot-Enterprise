@@ -1,5 +1,12 @@
 import os
+from dotenv import load_dotenv
 from pydantic import BaseModel
+
+# Ensure .env is always loaded
+_env_path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+if os.path.exists(_env_path):
+    load_dotenv(dotenv_path=_env_path)
+load_dotenv()
 
 class Settings(BaseModel):
     PROJECT_NAME: str = "ChefBot-Enterprise API"

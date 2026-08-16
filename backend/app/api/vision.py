@@ -51,8 +51,9 @@ async def analyze_fridge_photo(file: UploadFile = File(...)):
                     {
                         "type": "text",
                         "text": (
-                            "Analyze this fridge/pantry image carefully. List all visible food items and ingredients you can identify. "
+                            "Analyze this image carefully. List all visible food items, ingredients, or groceries you can identify. "
                             "Return ONLY a clean, comma-separated list of items (e.g. '3 eggs, 1 onion, cheddar cheese, bell pepper'). "
+                            "IF the image contains NO food, ingredients, or kitchen groceries at all, respond strictly with 'NO_FOOD_DETECTED'. "
                             "Do not include conversational filler."
                         )
                     },
@@ -65,6 +66,12 @@ async def analyze_fridge_photo(file: UploadFile = File(...)):
 
             response = vision_llm.invoke([message])
             raw_text = str(response.content).strip()
+
+            if "NO_FOOD_DETECTED" in raw_text or len(raw_text) < 3:
+                return VisionResponse(
+                    detected_ingredients=[],
+                    prompt_summary="No food items detected in image. Please upload a photo of a fridge, pantry, or ingredients."
+                )
 
             items = [item.strip() for item in raw_text.split(",") if item.strip()]
 

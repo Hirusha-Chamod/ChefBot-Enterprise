@@ -25,7 +25,7 @@ CULINARY_MATRIX = {
 def web_search(query: str) -> str:
     """PRIMARY SEARCH TOOL: Searches live web or recipe database for recipes matching fridge ingredients."""
     print(f"[TOOL EXECUTING] web_search(query='{query}')")
-    if settings.TAVILY_API_KEY and len(settings.TAVILY_API_KEY) > 10 and not settings.TAVILY_API_KEY.startswith("tvly-"):
+    if settings.TAVILY_API_KEY and len(settings.TAVILY_API_KEY) > 10 and settings.TAVILY_API_KEY.startswith("tvly-"):
         try:
             search = TavilySearchAPIWrapper(tavily_api_key=settings.TAVILY_API_KEY)
             results = search.results(query, max_results=3)
@@ -138,6 +138,5 @@ ALL_TOOLS = [
     search_recipes_api,
     get_recipe_details,
     substitute_ingredient,
-    calculate_nutrition,
-    extract_cooking_timers
+    calculate_nutrition
 ]

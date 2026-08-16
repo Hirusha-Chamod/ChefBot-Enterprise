@@ -52,8 +52,10 @@ def get_db_pool():
             from psycopg_pool import ConnectionPool
             _POOL = ConnectionPool(
                 conninfo=settings.DATABASE_URL,
-                min_size=2,
+                min_size=1,
                 max_size=10,
+                max_idle=60.0,
+                check=ConnectionPool.check_connection,
                 kwargs={"row_factory": dict_row, "autocommit": True}
             )
             print("[INFO] Initialized Neon DB Connection Pool (min=2, max=10).")

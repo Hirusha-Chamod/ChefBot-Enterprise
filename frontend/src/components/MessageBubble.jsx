@@ -17,7 +17,7 @@ class SafeMarkdown extends Component {
   }
 }
 
-export default function MessageBubble({ role, content, onStartCooking }) {
+export default function MessageBubble({ role, content, onStartCooking, isStreaming = false }) {
   const isUser = role === "user";
   const safeText = String(content || "");
 
@@ -34,7 +34,8 @@ export default function MessageBubble({ role, content, onStartCooking }) {
           ) : (
             <>
               <SafeMarkdown content={safeText} />
-              {onStartCooking && (
+              {isStreaming && <span className="streaming-cursor">▌</span>}
+              {!isStreaming && onStartCooking && (
                 <RecipeOptionCards content={safeText} onStartCooking={onStartCooking} />
               )}
             </>
